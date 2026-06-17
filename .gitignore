@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Env & secrets
+.env
+*.db
+*.sqlite3
+
+# Node / frontend
+node_modules/
+# Note: frontend/dist is intentionally committed so the backend can serve the
+# UI without requiring Node/npm. Rebuild with `npm run build` in frontend/.
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+
+# TS build info
+*.tsbuildinfo
