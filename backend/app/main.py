@@ -7,9 +7,8 @@ import io
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,7 +27,9 @@ from .schemas import PollRunInfo, ServiceLineUsage, Summary
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-_AZ = ZoneInfo("America/Phoenix")  # Arizona: MST year-round, no DST.
+# Arizona is MST year-round (no DST), so a fixed UTC-7 offset is always
+# correct and avoids needing the tzdata package (absent on Windows).
+_AZ = timezone(timedelta(hours=-7), "MST")
 _stop_event = asyncio.Event()
 
 
