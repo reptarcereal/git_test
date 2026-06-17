@@ -128,7 +128,7 @@ class StarlinkClient:
         while True:
             resp = self._request(
                 "GET",
-                f"/enterprise/v1/account/{acct}/service-lines",
+                f"/enterprise/v1/accounts/{acct}/service-lines",
                 params={"pageIndex": page, "limit": self._s.poll_page_size},
             )
             body = resp.json()
@@ -155,7 +155,7 @@ class StarlinkClient:
             chunk = line_numbers[i : i + batch]
             resp = self._request(
                 "POST",
-                f"/enterprise/v1/account/{acct}/billing-cycles/query",
+                f"/enterprise/v1/accounts/{acct}/billing-cycles/query",
                 json={
                     "serviceLinesFilter": chunk,
                     "previousBillingCycles": 0,
