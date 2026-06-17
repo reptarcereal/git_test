@@ -30,6 +30,8 @@ class Settings(BaseSettings):
     starlink_token_url: str = "https://www.starlink.com/api/auth/connect/token"
     # Base URL for the Enterprise / Account Management API.
     starlink_api_base: str = "https://web-api.starlink.com"
+    # API version segment used in request paths (v1 deprecated 2026-05-01).
+    starlink_api_version: str = "v2"
 
     # --- Polling -----------------------------------------------------------
     poll_interval_seconds: int = 3600  # how often to refresh usage (default 1h)
