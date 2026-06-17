@@ -100,7 +100,15 @@ button:disabled { opacity: 0.6; cursor: default; }
   padding: 8px 12px;
   min-width: 240px;
 }
-.controls-right { display: flex; gap: 8px; align-items: center; }
+.controls-right { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cycle-select {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 12px;
+  font-size: 14px;
+}
 .export-btn {
   background: var(--panel-2);
   color: var(--text);

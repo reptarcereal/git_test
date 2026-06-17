@@ -3,6 +3,7 @@ export type Status = "ok" | "warning" | "over";
 export interface ServiceLineUsage {
   service_line_number: string;
   nickname: string | null;
+  customer: string | null;
   service_plan: string | null;
   account_number: string | null;
   cycle_start: string | null;
@@ -25,5 +26,12 @@ export interface Summary {
   total_overage_gb: number;
   estimated_overage_cost: number;
   last_updated: string | null;
+  cycle: string | null;
+  cycle_label: string | null;
   mock_mode: boolean;
+}
+
+export interface CycleInfo {
+  cycle: string;
+  label: string;
 }

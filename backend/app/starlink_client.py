@@ -110,7 +110,11 @@ class StarlinkClient:
 
     # -- High-level API -----------------------------------------------------
     def fetch_all_usage(self) -> list[UsageRecord]:
-        """List every service line on the account and attach current usage."""
+        """Return one UsageRecord per (service line, billing cycle).
+
+        Pulls all available billing cycles so accounting has full history; the
+        dashboard reads the most recent cycle per line by default.
+        """
         lines = self._list_service_lines()
         usage_by_line = self._query_billing_usage(
             [ln["serviceLineNumber"] for ln in lines]
@@ -118,7 +122,9 @@ class StarlinkClient:
         records: list[UsageRecord] = []
         for ln in lines:
             sln = ln["serviceLineNumber"]
-            records.append(_parse_service_line(ln, usage_by_line.get(sln, {}), self._s))
+            records.extend(
+                _parse_cycles(ln, usage_by_line.get(sln, {}), self._s)
+            )
         return records
 
     def _path(self, suffix: str) -> str:
@@ -171,8 +177,11 @@ class StarlinkClient:
                     "POST",
                     self._path("data-usage/query"),
                     params={"page": page, "limit": limit},
-                    # QueryDataUsageRequest: current cycle only, active lines.
-                    json={"previousBillingCycles": 0, "activeServiceLinesOnly": True},
+                    # QueryDataUsageRequest: pull history of previous cycles too.
+                    json={
+                        "previousBillingCycles": self._s.history_cycles,
+                        "activeServiceLinesOnly": True,
+                    },
                 )
                 rows = self._unwrap_list(resp.json())
                 if not rows:
@@ -205,26 +214,49 @@ def _parse_dt(value: Any) -> datetime | None:
         return None
 
 
-def _parse_service_line(
+def _parse_cycles(
     line: dict[str, Any], usage: dict[str, Any], settings: Settings
-) -> UsageRecord:
+) -> list[UsageRecord]:
+    """Expand one service line into a UsageRecord per billing cycle."""
     plan = usage.get("servicePlan") or {}
     cycles = usage.get("billingCycles") or []
-    # Current cycle is the most recent, i.e. the last element.
-    current = cycles[-1] if cycles else {}
-    return UsageRecord(
-        service_line_number=line.get("serviceLineNumber", ""),
-        nickname=line.get("nickname"),
-        account_number=usage.get("accountNumber") or settings.starlink_account_number,
-        service_plan=line.get("productReferenceId") or plan.get("productId"),
-        cycle_start=_parse_dt(current.get("startDate") or usage.get("startDate")),
-        cycle_end=_parse_dt(current.get("endDate") or usage.get("endDate")),
-        # usageLimitGB = priority limit (metered) or data-pool capacity (Priority).
-        included_gb=_num(plan.get("usageLimitGB")),
-        # totalPriorityGB is what counts against the cap (incl. opt-in priority).
-        priority_used_gb=_num(current.get("totalPriorityGB")),
-        standard_used_gb=_num(current.get("totalStandardGB")),
-    )
+    # usageLimitGB = priority limit (metered) or data-pool capacity (Priority).
+    included = _num(plan.get("usageLimitGB"))
+    sln = line.get("serviceLineNumber", "")
+    nickname = line.get("nickname")
+    plan_name = line.get("productReferenceId") or plan.get("productId")
+    account = usage.get("accountNumber") or settings.starlink_account_number
+
+    if not cycles:
+        # No usage history yet: emit a single empty current-cycle record so the
+        # line still appears on the dashboard.
+        return [
+            UsageRecord(
+                service_line_number=sln,
+                nickname=nickname,
+                account_number=account,
+                service_plan=plan_name,
+                included_gb=included,
+            )
+        ]
+
+    records: list[UsageRecord] = []
+    for cycle in cycles:
+        records.append(
+            UsageRecord(
+                service_line_number=sln,
+                nickname=nickname,
+                account_number=account,
+                service_plan=plan_name,
+                cycle_start=_parse_dt(cycle.get("startDate")),
+                cycle_end=_parse_dt(cycle.get("endDate")),
+                included_gb=included,
+                # totalPriorityGB counts against the cap (incl. opt-in priority).
+                priority_used_gb=_num(cycle.get("totalPriorityGB")),
+                standard_used_gb=_num(cycle.get("totalStandardGB")),
+            )
+        )
+    return records
 
 
 def _num(value: Any) -> float:

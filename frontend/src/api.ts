@@ -1,4 +1,4 @@
-import type { ServiceLineUsage, Summary } from "./types";
+import type { CycleInfo, ServiceLineUsage, Summary } from "./types";
 
 async function getJSON<T>(url: string): Promise<T> {
   const res = await fetch(url);
@@ -6,26 +6,25 @@ async function getJSON<T>(url: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+type LineParams = { status?: string; search?: string; cycle?: string };
+
+function qs(params: Record<string, string | undefined>): string {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) q.set(k, v);
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
+
 export const api = {
-  summary: () => getJSON<Summary>("/api/summary"),
-  serviceLines: (params: { status?: string; search?: string } = {}) => {
-    const q = new URLSearchParams();
-    if (params.status) q.set("status", params.status);
-    if (params.search) q.set("search", params.search);
-    const qs = q.toString();
-    return getJSON<ServiceLineUsage[]>(`/api/service-lines${qs ? `?${qs}` : ""}`);
-  },
+  summary: (cycle?: string) => getJSON<Summary>(`/api/summary${qs({ cycle })}`),
+  cycles: () => getJSON<CycleInfo[]>("/api/cycles"),
+  serviceLines: (params: LineParams = {}) =>
+    getJSON<ServiceLineUsage[]>(`/api/service-lines${qs(params)}`),
   refresh: async () => {
     const res = await fetch("/api/refresh", { method: "POST" });
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
   },
   // URL for the CSV export of the currently-filtered table.
-  csvUrl: (params: { status?: string; search?: string } = {}) => {
-    const q = new URLSearchParams();
-    if (params.status) q.set("status", params.status);
-    if (params.search) q.set("search", params.search);
-    const qs = q.toString();
-    return `/api/service-lines.csv${qs ? `?${qs}` : ""}`;
-  },
+  csvUrl: (params: LineParams = {}) => `/api/service-lines.csv${qs(params)}`,
 };

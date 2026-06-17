@@ -26,6 +26,7 @@ export function ServiceLineTable({ rows }: { rows: ServiceLineUsage[] }) {
         <tr>
           <th>Status</th>
           <th>Service line</th>
+          <th>Customer</th>
           <th>Plan</th>
           <th>Used / Included</th>
           <th>Utilization</th>
@@ -44,6 +45,7 @@ export function ServiceLineTable({ rows }: { rows: ServiceLineUsage[] }) {
               <div className="line-name">{r.nickname ?? r.service_line_number}</div>
               <div className="line-sub">{r.service_line_number}</div>
             </td>
+            <td>{r.customer ?? "—"}</td>
             <td>{r.service_plan ?? "—"}</td>
             <td>
               {fmt(r.priority_used_gb)} / {fmt(r.included_gb)} GB

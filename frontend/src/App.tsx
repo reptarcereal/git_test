@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
-import type { ServiceLineUsage, Summary } from "./types";
+import type { CycleInfo, ServiceLineUsage, Summary } from "./types";
 import { SummaryCards } from "./components/SummaryCards";
 import { ServiceLineTable } from "./components/ServiceLineTable";
-import { fmtAZDateTime, fmtAZDate } from "./format";
+import { fmtAZDateTime } from "./format";
 
 type Filter = "" | "over" | "warning" | "ok";
 const REFRESH_MS = 60_000;
@@ -11,6 +11,8 @@ const REFRESH_MS = 60_000;
 export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [rows, setRows] = useState<ServiceLineUsage[]>([]);
+  const [cycles, setCycles] = useState<CycleInfo[]>([]);
+  const [cycle, setCycle] = useState<string>(""); // "" = current/latest
   const [filter, setFilter] = useState<Filter>("");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
@@ -20,15 +22,23 @@ export default function App() {
     setError(null);
     try {
       const [s, lines] = await Promise.all([
-        api.summary(),
-        api.serviceLines({ status: filter || undefined, search: search || undefined }),
+        api.summary(cycle || undefined),
+        api.serviceLines({
+          status: filter || undefined,
+          search: search || undefined,
+          cycle: cycle || undefined,
+        }),
       ]);
       setSummary(s);
       setRows(lines);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load data");
     }
-  }, [filter, search]);
+  }, [filter, search, cycle]);
+
+  useEffect(() => {
+    api.cycles().then(setCycles).catch(() => setCycles([]));
+  }, []);
 
   useEffect(() => {
     load();
@@ -39,13 +49,11 @@ export default function App() {
     return () => clearInterval(id);
   }, [load]);
 
-  // Billing cycle end is the same across the fleet; surface the current one.
-  const cycleEnd = rows.find((r) => r.cycle_end)?.cycle_end ?? null;
-
   const triggerRefresh = async () => {
     setLoading(true);
     try {
       await api.refresh();
+      api.cycles().then(setCycles).catch(() => {});
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Refresh failed");
@@ -65,8 +73,8 @@ export default function App() {
               {summary.mock_mode && <span className="mock-tag">MOCK DATA</span>}
             </p>
           )}
-          {cycleEnd && (
-            <p className="muted">Billing cycle ends {fmtAZDate(cycleEnd)}</p>
+          {summary?.cycle_label && (
+            <p className="muted">Billing cycle ending {summary.cycle_label}</p>
           )}
         </div>
         <button onClick={triggerRefresh} disabled={loading}>
@@ -90,15 +98,32 @@ export default function App() {
           ))}
         </div>
         <div className="controls-right">
+          <select
+            className="cycle-select"
+            value={cycle}
+            onChange={(e) => setCycle(e.target.value)}
+            title="Billing cycle"
+          >
+            <option value="">Current cycle</option>
+            {cycles.map((c) => (
+              <option key={c.cycle} value={c.cycle}>
+                {c.label}
+              </option>
+            ))}
+          </select>
           <input
             type="search"
-            placeholder="Search name or service-line #"
+            placeholder="Search name, customer, or line #"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
           <a
             className="export-btn"
-            href={api.csvUrl({ status: filter || undefined, search: search || undefined })}
+            href={api.csvUrl({
+              status: filter || undefined,
+              search: search || undefined,
+              cycle: cycle || undefined,
+            })}
           >
             Export CSV
           </a>

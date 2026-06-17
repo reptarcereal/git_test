@@ -23,39 +23,51 @@ _SITES = [
 ]
 
 
-def generate_usage_records(count: int = 220, seed: int = 42) -> list[UsageRecord]:
-    rng = random.Random(seed)
+def _cycle_windows(months: int) -> list[tuple[datetime, datetime]]:
+    """Recent billing cycles ending on the 11th, most recent last."""
     now = datetime.now(timezone.utc)
-    cycle_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    cycle_end = (cycle_start + timedelta(days=32)).replace(day=1)
+    end = now.replace(day=11, hour=0, minute=0, second=0, microsecond=0)
+    windows: list[tuple[datetime, datetime]] = []
+    for _ in range(months):
+        start = (end - timedelta(days=20)).replace(day=11)
+        windows.append((start, end))
+        end = start
+    return list(reversed(windows))
+
+
+def generate_usage_records(
+    count: int = 220, seed: int = 42, months: int = 8
+) -> list[UsageRecord]:
+    rng = random.Random(seed)
+    windows = _cycle_windows(months)
 
     records: list[UsageRecord] = []
     for i in range(count):
         plan_name, included = rng.choice(_PLANS)
-        # Spread usage so a realistic minority are in warning/over territory.
-        usage_factor = rng.choices(
-            population=[
-                rng.uniform(0.0, 0.6),   # comfortably under
-                rng.uniform(0.6, 0.85),  # creeping up
-                rng.uniform(0.85, 1.05), # near / at cap
-                rng.uniform(1.05, 1.8),  # over
-            ],
-            weights=[55, 22, 13, 10],
-            k=1,
-        )[0]
-        priority_used = round(included * usage_factor, 2)
         site = rng.choice(_SITES)
-        records.append(
-            UsageRecord(
-                service_line_number=f"SL-{1000 + i}",
-                nickname=f"{site}-{i:03d}",
-                account_number="ACC-MOCK-0001",
-                service_plan=plan_name,
-                cycle_start=cycle_start,
-                cycle_end=cycle_end,
-                included_gb=included,
-                priority_used_gb=priority_used,
-                standard_used_gb=round(rng.uniform(0, 500), 2),
+        for cycle_start, cycle_end in windows:
+            # Spread usage so a realistic minority land in warning/over territory.
+            usage_factor = rng.choices(
+                population=[
+                    rng.uniform(0.0, 0.6),   # comfortably under
+                    rng.uniform(0.6, 0.85),  # creeping up
+                    rng.uniform(0.85, 1.05), # near / at cap
+                    rng.uniform(1.05, 1.8),  # over
+                ],
+                weights=[55, 22, 13, 10],
+                k=1,
+            )[0]
+            records.append(
+                UsageRecord(
+                    service_line_number=f"SL-{1000 + i}",
+                    nickname=f"{site}-{i:03d}",
+                    account_number="ACC-MOCK-0001",
+                    service_plan=plan_name,
+                    cycle_start=cycle_start,
+                    cycle_end=cycle_end,
+                    included_gb=included,
+                    priority_used_gb=round(included * usage_factor, 2),
+                    standard_used_gb=round(rng.uniform(0, 500), 2),
+                )
             )
-        )
     return records

@@ -28,6 +28,7 @@ UtcDateTime = Annotated[
 class ServiceLineUsage(BaseModel):
     service_line_number: str
     nickname: str | None
+    customer: str | None = None
     service_plan: str | None
     account_number: str | None
     cycle_start: UtcDateTime | None
@@ -50,7 +51,14 @@ class Summary(BaseModel):
     total_overage_gb: float
     estimated_overage_cost: float
     last_updated: UtcDateTime | None
+    cycle: str | None = None
+    cycle_label: str | None = None
     mock_mode: bool
+
+
+class CycleInfo(BaseModel):
+    cycle: str
+    label: str
 
 
 class PollRunInfo(BaseModel):

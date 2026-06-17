@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     poll_interval_seconds: int = 3600  # how often to refresh usage (default 1h)
     poll_page_size: int = 100  # service lines per API page / batch
     poll_on_startup: bool = True
+    # Previous billing cycles to pull for history (high = "max available";
+    # Starlink returns as many as it has). 0 = current cycle only.
+    history_cycles: int = 60
 
     # --- Overage accounting ------------------------------------------------
     # % of the included allotment at which a line is flagged "warning".
