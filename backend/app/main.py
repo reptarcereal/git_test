@@ -2,13 +2,18 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import BackgroundTasks, Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -23,6 +28,7 @@ from .schemas import PollRunInfo, ServiceLineUsage, Summary
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+_AZ = ZoneInfo("America/Phoenix")  # Arizona: MST year-round, no DST.
 _stop_event = asyncio.Event()
 
 
@@ -116,11 +122,8 @@ def summary(session: Session = Depends(get_session)) -> Summary:
     )
 
 
-@app.get("/api/service-lines", response_model=list[ServiceLineUsage])
-def service_lines(
-    status: str | None = Query(None, pattern="^(ok|warning|over)$"),
-    search: str | None = None,
-    session: Session = Depends(get_session),
+def _filtered_lines(
+    session: Session, status: str | None, search: str | None
 ) -> list[ServiceLineUsage]:
     items = [_to_usage(snap, line) for snap, line in _latest_rows(session)]
     if status:
@@ -136,6 +139,78 @@ def service_lines(
     # Worst offenders first.
     items.sort(key=lambda i: (i.overage_gb, i.used_pct), reverse=True)
     return items
+
+
+@app.get("/api/service-lines", response_model=list[ServiceLineUsage])
+def service_lines(
+    status: str | None = Query(None, pattern="^(ok|warning|over)$"),
+    search: str | None = None,
+    session: Session = Depends(get_session),
+) -> list[ServiceLineUsage]:
+    return _filtered_lines(session, status, search)
+
+
+@app.get("/api/service-lines.csv")
+def service_lines_csv(
+    status: str | None = Query(None, pattern="^(ok|warning|over)$"),
+    search: str | None = None,
+    session: Session = Depends(get_session),
+) -> StreamingResponse:
+    """Export the (filtered) service-line table as CSV — opens in Excel."""
+    items = _filtered_lines(session, status, search)
+
+    def _date(value: datetime | None) -> str:
+        # Arizona (MST, no DST) date to match the dashboard.
+        if value is None:
+            return ""
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(_AZ).strftime("%Y-%m-%d")
+
+    buffer = io.StringIO()
+    writer = csv.writer(buffer)
+    writer.writerow(
+        [
+            "Service Line",
+            "Nickname",
+            "Plan",
+            "Account",
+            "Priority Used (GB)",
+            "Included (GB)",
+            "Standard Used (GB)",
+            "Utilization (%)",
+            "Overage (GB)",
+            "Est. Cost ($)",
+            "Status",
+            "Cycle Start",
+            "Cycle End",
+        ]
+    )
+    for i in items:
+        writer.writerow(
+            [
+                i.service_line_number,
+                i.nickname or "",
+                i.service_plan or "",
+                i.account_number or "",
+                i.priority_used_gb,
+                i.included_gb,
+                i.standard_used_gb,
+                i.used_pct,
+                i.overage_gb,
+                i.estimated_overage_cost,
+                i.status,
+                _date(i.cycle_start),
+                _date(i.cycle_end),
+            ]
+        )
+    buffer.seek(0)
+    filename = f"starlink-overages-{datetime.now(_AZ):%Y%m%d}.csv"
+    return StreamingResponse(
+        iter([buffer.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @app.get("/api/overages", response_model=list[ServiceLineUsage])

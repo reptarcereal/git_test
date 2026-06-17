@@ -89,12 +89,20 @@ export default function App() {
             </button>
           ))}
         </div>
-        <input
-          type="search"
-          placeholder="Search name or service-line #"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+        <div className="controls-right">
+          <input
+            type="search"
+            placeholder="Search name or service-line #"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <a
+            className="export-btn"
+            href={api.csvUrl({ status: filter || undefined, search: search || undefined })}
+          >
+            Export CSV
+          </a>
+        </div>
       </div>
 
       <ServiceLineTable rows={rows} />

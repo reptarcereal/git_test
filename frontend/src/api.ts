@@ -20,4 +20,12 @@ export const api = {
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.json();
   },
+  // URL for the CSV export of the currently-filtered table.
+  csvUrl: (params: { status?: string; search?: string } = {}) => {
+    const q = new URLSearchParams();
+    if (params.status) q.set("status", params.status);
+    if (params.search) q.set("search", params.search);
+    const qs = q.toString();
+    return `/api/service-lines.csv${qs ? `?${qs}` : ""}`;
+  },
 };

@@ -100,6 +100,18 @@ button:disabled { opacity: 0.6; cursor: default; }
   padding: 8px 12px;
   min-width: 240px;
 }
+.controls-right { display: flex; gap: 8px; align-items: center; }
+.export-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 14px;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.export-btn:hover { background: var(--accent); color: #fff; }
 
 table.lines {
   width: 100%;
