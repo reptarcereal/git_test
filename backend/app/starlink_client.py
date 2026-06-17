@@ -171,7 +171,8 @@ class StarlinkClient:
                     "POST",
                     self._path("data-usage/query"),
                     params={"page": page, "limit": limit},
-                    json={},  # QueryDataUsageRequest filters (empty = all lines)
+                    # QueryDataUsageRequest: current cycle only, active lines.
+                    json={"previousBillingCycles": 0, "activeServiceLinesOnly": True},
                 )
                 rows = self._unwrap_list(resp.json())
                 if not rows:
@@ -186,11 +187,12 @@ class StarlinkClient:
         except StarlinkAPIError as exc:
             logger.warning("data-usage/query failed, usage will be blank: %s", exc)
         return out
-        return out
 
 
 # --------------------------------------------------------------------------
-# Response mapping — ADJUST THESE TO YOUR ACCOUNT'S PAYLOAD SHAPE.
+# Response mapping (Starlink v2 schema).
+#   line  = ServiceLineResponse              (GET /service-lines)
+#   usage = ServiceLineDataUsageForBillingCycles (POST /data-usage/query)
 # --------------------------------------------------------------------------
 def _parse_dt(value: Any) -> datetime | None:
     if not value:
@@ -206,20 +208,22 @@ def _parse_dt(value: Any) -> datetime | None:
 def _parse_service_line(
     line: dict[str, Any], usage: dict[str, Any], settings: Settings
 ) -> UsageRecord:
+    plan = usage.get("servicePlan") or {}
+    cycles = usage.get("billingCycles") or []
+    # Current cycle is the most recent, i.e. the last element.
+    current = cycles[-1] if cycles else {}
     return UsageRecord(
         service_line_number=line.get("serviceLineNumber", ""),
-        nickname=line.get("nickname") or line.get("serviceLineName"),
-        account_number=settings.starlink_account_number,
-        service_plan=line.get("productReferenceId") or line.get("servicePlan"),
-        cycle_start=_parse_dt(usage.get("startDate") or usage.get("cycleStart")),
-        cycle_end=_parse_dt(usage.get("endDate") or usage.get("cycleEnd")),
-        included_gb=_num(usage.get("includedGB") or usage.get("dataAllotmentGB")),
-        priority_used_gb=_num(
-            usage.get("priorityGB")
-            or usage.get("totalPriorityGB")
-            or usage.get("dataUsageGB")
-        ),
-        standard_used_gb=_num(usage.get("standardGB") or usage.get("optInPriorityGB")),
+        nickname=line.get("nickname"),
+        account_number=usage.get("accountNumber") or settings.starlink_account_number,
+        service_plan=line.get("productReferenceId") or plan.get("productId"),
+        cycle_start=_parse_dt(current.get("startDate") or usage.get("startDate")),
+        cycle_end=_parse_dt(current.get("endDate") or usage.get("endDate")),
+        # usageLimitGB = priority limit (metered) or data-pool capacity (Priority).
+        included_gb=_num(plan.get("usageLimitGB")),
+        # totalPriorityGB is what counts against the cap (incl. opt-in priority).
+        priority_used_gb=_num(current.get("totalPriorityGB")),
+        standard_used_gb=_num(current.get("totalStandardGB")),
     )
 
 

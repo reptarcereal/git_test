@@ -35,6 +35,7 @@ def run_poll(settings: Settings | None = None) -> PollRun:
 
     try:
         records = _collect_records(settings)
+        seen = {rec.service_line_number for rec in records}
         for rec in records:
             result = compute_overage(rec, settings)
 
@@ -68,6 +69,24 @@ def run_poll(settings: Settings | None = None) -> PollRun:
                     estimated_overage_cost=result.estimated_overage_cost,
                 )
             )
+
+        # Prune lines no longer present (e.g. leftover mock data after switching
+        # to live, or removed service lines). Only when we actually got data, so
+        # an empty/failed fetch never wipes the dashboard.
+        if seen:
+            stale = session.execute(
+                select(ServiceLine.service_line_number).where(
+                    ServiceLine.service_line_number.not_in(seen)
+                )
+            ).scalars().all()
+            if stale:
+                session.query(UsageSnapshot).filter(
+                    UsageSnapshot.service_line_number.in_(stale)
+                ).delete(synchronize_session=False)
+                session.query(ServiceLine).filter(
+                    ServiceLine.service_line_number.in_(stale)
+                ).delete(synchronize_session=False)
+                logger.info("Pruned %d stale service line(s).", len(stale))
 
         run.lines_processed = len(records)
         run.status = "ok"
