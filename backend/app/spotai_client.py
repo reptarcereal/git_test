@@ -20,24 +20,34 @@ from .config import Settings
 logger = logging.getLogger(__name__)
 
 
-def extract_unit_numbers(text: str | None) -> list[str]:
-    """Pull normalized unit numbers from a nickname or location name.
+def extract_unit_tokens(text: str | None) -> list[str]:
+    """Reduce a nickname or location name to its unit identity token(s).
 
-    Starlink nicknames and Spot.ai location names share a unit number but use
-    different formats ("UNIT 002", "Unit 2", "Site 2 - Phoenix"), so we match
-    on the number alone. Leading zeros are stripped ("002" == "2") and the
-    longest digit run is tried first (so a real unit number beats an embedded
-    zip code). Returns [] when there is no number (e.g. "Starlink Mini Test").
+    A unit's identity is an optional *glued* alpha prefix plus its number:
+      - "VX002"      -> "VX2"   (the glued "VX" series code is significant)
+      - "Unit 002"   -> "2"     (a separate word like "Unit"/"Site" is a label,
+                                  ignored; only the number matters)
+      - "Site 118 - Phoenix" -> "118"
+      - "Starlink Mini Test" -> []   (no number)
+
+    So "VX002" (VX2) and "Unit 002" (2) are correctly treated as different
+    units, while formatting differences (spacing, leading zeros, trailing city
+    names) are ignored. Letters are only kept when glued to the digits with no
+    space, e.g. "VX-002" -> "VX2".
     """
-    runs = re.findall(r"\d+", text or "")
-    out: list[str] = []
+    tokens: list[str] = []
     seen: set[str] = set()
-    for run in sorted(runs, key=len, reverse=True):
-        normalized = run.lstrip("0") or "0"
-        if normalized not in seen:
-            seen.add(normalized)
-            out.append(normalized)
-    return out
+    for word in re.split(r"\s+", (text or "").strip()):
+        m = re.match(r"^([A-Za-z]*)[-_]*0*(\d+)", word)
+        if not m:
+            continue
+        prefix = m.group(1).upper()
+        number = m.group(2).lstrip("0") or "0"
+        token = f"{prefix}{number}"
+        if token not in seen:
+            seen.add(token)
+            tokens.append(token)
+    return tokens
 
 
 class SpotAiClient:
@@ -84,10 +94,10 @@ class SpotAiClient:
 
 
 def build_customer_map(settings: Settings) -> dict[str, str]:
-    """Return {unit_number: customer} across all Spot.ai accounts.
+    """Return {unit_token: customer} across all Spot.ai accounts.
 
-    Each location name is reduced to its unit number(s); failures for one
-    account are logged and skipped so the poll still succeeds.
+    Each location name is reduced to its unit identity token(s); failures for
+    one account are logged and skipped so the poll still succeeds.
     """
     mapping: dict[str, str] = {}
     for account in settings.spot_ai_account_list:
@@ -110,12 +120,12 @@ def build_customer_map(settings: Settings) -> dict[str, str]:
             )
             if not customer:
                 continue
-            for number in extract_unit_numbers(loc.get("name")):
-                if number in mapping and mapping[number] != customer:
+            for token in extract_unit_tokens(loc.get("name")):
+                if token in mapping and mapping[token] != customer:
                     logger.warning(
                         "Spot.ai: unit %s maps to multiple customers (%s, %s)",
-                        number, mapping[number], customer,
+                        token, mapping[token], customer,
                     )
-                mapping.setdefault(number, customer)
-    logger.info("Spot.ai: mapped %d unit numbers to customers.", len(mapping))
+                mapping.setdefault(token, customer)
+    logger.info("Spot.ai: mapped %d unit tokens to customers.", len(mapping))
     return mapping
