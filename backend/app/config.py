@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     starlink_account_number: str = ""
 
     # OAuth2 client-credentials token endpoint.
-    starlink_token_url: str = "https://www.spacex.com/api/auth/connect/token"
+    starlink_token_url: str = "https://www.starlink.com/api/auth/connect/token"
     # Base URL for the Enterprise / Account Management API.
     starlink_api_base: str = "https://web-api.starlink.com"
 
