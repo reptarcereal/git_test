@@ -121,60 +121,71 @@ class StarlinkClient:
             records.append(_parse_service_line(ln, usage_by_line.get(sln, {}), self._s))
         return records
 
-    @property
-    def _v(self) -> str:
-        return self._s.starlink_api_version
+    def _path(self, suffix: str) -> str:
+        # v2 endpoints live under <host>/api/public/<version>/...
+        return f"/api/public/{self._s.starlink_api_version}/{suffix}"
+
+    @staticmethod
+    def _unwrap_list(body: dict) -> list[dict]:
+        """Pull the array of rows out of a Starlink paginated ServiceResponse.
+
+        Shape is {"content": {"results"|"content": [...]}, "isValid": ...}.
+        """
+        content = body.get("content", body) or {}
+        if isinstance(content, list):
+            return content
+        return content.get("results", content.get("content", [])) or []
 
     def _list_service_lines(self) -> list[dict[str, Any]]:
-        # v2: account-scoped by the service account, so no account number in the
-        # path. GET /public/v2/service-lines (paginated).
+        # v2 is account-scoped by the service account: no account number in the
+        # path. GET /api/public/v2/service-lines, paginated by `page` (size 100).
         results: list[dict[str, Any]] = []
         page = 0
         while True:
             resp = self._request(
-                "GET",
-                f"/public/{self._v}/service-lines",
-                params={"pageIndex": page, "limit": self._s.poll_page_size},
+                "GET", self._path("service-lines"), params={"page": page}
             )
-            body = resp.json()
-            content = body.get("content", body) or {}
-            items = content.get("results", content.get("content", [])) if isinstance(content, dict) else content
+            items = self._unwrap_list(resp.json())
             if not items:
                 break
             results.extend(items)
-            # Stop when the page is short — robust across paging schemes.
-            if len(items) < self._s.poll_page_size:
+            if len(items) < 100:  # server page size is fixed at 100
                 break
             page += 1
         return results
 
     def _query_billing_usage(self, line_numbers: list[str]) -> dict[str, dict]:
-        """Query current-cycle data usage for the given service lines.
+        """Query current-cycle data usage for all service lines.
 
-        v2: POST /public/v2/data-usage/query. Done in batches to respect
-        request-size and rate limits. NOTE: the request body and response
-        shape below are best-effort — confirm against your account's swagger.
+        v2: POST /api/public/v2/data-usage/query, paginated via `page`/`limit`
+        query params (limit up to 250). Wrapped so a body/shape mismatch logs a
+        warning instead of blanking the whole dashboard. The request body and
+        response field names are finalized from the account's v2 swagger.
         """
         out: dict[str, dict] = {}
-        batch = self._s.poll_page_size
-        for i in range(0, len(line_numbers), batch):
-            chunk = line_numbers[i : i + batch]
-            resp = self._request(
-                "POST",
-                f"/public/{self._v}/data-usage/query",
-                json={
-                    "serviceLinesFilter": chunk,
-                    "pageIndex": 0,
-                    "pageLimit": batch,
-                },
-            )
-            body = resp.json()
-            content = body.get("content", body) or {}
-            rows = content.get("results", content.get("dataUsage", [])) if isinstance(content, dict) else content
-            for item in rows:
-                sln = item.get("serviceLineNumber")
-                if sln:
-                    out[sln] = item
+        limit = min(max(self._s.poll_page_size, 50), 250)
+        page = 0
+        try:
+            while True:
+                resp = self._request(
+                    "POST",
+                    self._path("data-usage/query"),
+                    params={"page": page, "limit": limit},
+                    json={},  # QueryDataUsageRequest filters (empty = all lines)
+                )
+                rows = self._unwrap_list(resp.json())
+                if not rows:
+                    break
+                for item in rows:
+                    sln = item.get("serviceLineNumber")
+                    if sln:
+                        out[sln] = item
+                if len(rows) < limit:
+                    break
+                page += 1
+        except StarlinkAPIError as exc:
+            logger.warning("data-usage/query failed, usage will be blank: %s", exc)
+        return out
         return out
 
 

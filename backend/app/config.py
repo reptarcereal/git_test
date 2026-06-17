@@ -28,8 +28,8 @@ class Settings(BaseSettings):
 
     # OAuth2 client-credentials token endpoint.
     starlink_token_url: str = "https://www.starlink.com/api/auth/connect/token"
-    # Base URL for the Enterprise / Account Management API.
-    starlink_api_base: str = "https://web-api.starlink.com"
+    # Base URL (host) for the API. v2 endpoints live under /api/public/<ver>/.
+    starlink_api_base: str = "https://www.starlink.com"
     # API version segment used in request paths (v1 deprecated 2026-05-01).
     starlink_api_version: str = "v2"
 
