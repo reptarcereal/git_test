@@ -3,6 +3,7 @@ import { api } from "./api";
 import type { ServiceLineUsage, Summary } from "./types";
 import { SummaryCards } from "./components/SummaryCards";
 import { ServiceLineTable } from "./components/ServiceLineTable";
+import { fmtAZDateTime, fmtAZDate } from "./format";
 
 type Filter = "" | "over" | "warning" | "ok";
 const REFRESH_MS = 60_000;
@@ -38,6 +39,9 @@ export default function App() {
     return () => clearInterval(id);
   }, [load]);
 
+  // Billing cycle end is the same across the fleet; surface the current one.
+  const cycleEnd = rows.find((r) => r.cycle_end)?.cycle_end ?? null;
+
   const triggerRefresh = async () => {
     setLoading(true);
     try {
@@ -57,9 +61,12 @@ export default function App() {
           <h1>Starlink Overage Dashboard</h1>
           {summary?.last_updated && (
             <p className="muted">
-              Updated {new Date(summary.last_updated).toLocaleString()}
+              Updated {fmtAZDateTime(summary.last_updated)} MST
               {summary.mock_mode && <span className="mock-tag">MOCK DATA</span>}
             </p>
+          )}
+          {cycleEnd && (
+            <p className="muted">Billing cycle ends {fmtAZDate(cycleEnd)}</p>
           )}
         </div>
         <button onClick={triggerRefresh} disabled={loading}>

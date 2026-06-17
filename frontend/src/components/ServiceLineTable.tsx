@@ -1,4 +1,5 @@
 import type { ServiceLineUsage } from "../types";
+import { fmtAZDate } from "../format";
 
 const fmt = (n: number) =>
   n.toLocaleString(undefined, { maximumFractionDigits: 1 });
@@ -28,6 +29,7 @@ export function ServiceLineTable({ rows }: { rows: ServiceLineUsage[] }) {
           <th>Plan</th>
           <th>Used / Included</th>
           <th>Utilization</th>
+          <th>Cycle ends</th>
           <th className="num">Overage</th>
           <th className="num">Est. cost</th>
         </tr>
@@ -49,6 +51,7 @@ export function ServiceLineTable({ rows }: { rows: ServiceLineUsage[] }) {
             <td className="bar-cell">
               <UsageBar pct={r.used_pct} status={r.status} />
             </td>
+            <td>{r.cycle_end ? fmtAZDate(r.cycle_end) : "—"}</td>
             <td className="num">{r.overage_gb > 0 ? `${fmt(r.overage_gb)} GB` : "—"}</td>
             <td className="num">
               {r.estimated_overage_cost > 0
