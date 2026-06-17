@@ -121,14 +121,19 @@ class StarlinkClient:
             records.append(_parse_service_line(ln, usage_by_line.get(sln, {}), self._s))
         return records
 
+    @property
+    def _v(self) -> str:
+        return self._s.starlink_api_version
+
     def _list_service_lines(self) -> list[dict[str, Any]]:
+        # v2: account-scoped by the service account, so no account number in the
+        # path. GET /public/v2/service-lines (paginated).
         results: list[dict[str, Any]] = []
         page = 0
-        acct = self._s.starlink_account_number
         while True:
             resp = self._request(
                 "GET",
-                f"/enterprise/{self._s.starlink_api_version}/accounts/{acct}/service-lines",
+                f"/public/{self._v}/service-lines",
                 params={"pageIndex": page, "limit": self._s.poll_page_size},
             )
             body = resp.json()
@@ -144,28 +149,29 @@ class StarlinkClient:
         return results
 
     def _query_billing_usage(self, line_numbers: list[str]) -> dict[str, dict]:
-        """Query current billing-cycle usage for the given service lines.
+        """Query current-cycle data usage for the given service lines.
 
-        Done in batches to respect request-size limits and rate limits.
+        v2: POST /public/v2/data-usage/query. Done in batches to respect
+        request-size and rate limits. NOTE: the request body and response
+        shape below are best-effort — confirm against your account's swagger.
         """
-        acct = self._s.starlink_account_number
         out: dict[str, dict] = {}
         batch = self._s.poll_page_size
         for i in range(0, len(line_numbers), batch):
             chunk = line_numbers[i : i + batch]
             resp = self._request(
                 "POST",
-                f"/enterprise/{self._s.starlink_api_version}/accounts/{acct}/billing-cycles/query",
+                f"/public/{self._v}/data-usage/query",
                 json={
                     "serviceLinesFilter": chunk,
-                    "previousBillingCycles": 0,
                     "pageIndex": 0,
                     "pageLimit": batch,
                 },
             )
             body = resp.json()
             content = body.get("content", body) or {}
-            for item in content.get("results", content.get("billingCycles", [])):
+            rows = content.get("results", content.get("dataUsage", [])) if isinstance(content, dict) else content
+            for item in rows:
                 sln = item.get("serviceLineNumber")
                 if sln:
                     out[sln] = item
