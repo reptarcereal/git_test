@@ -12,7 +12,8 @@ __pycache__/
 
 # Node / frontend
 node_modules/
-frontend/dist/
+# Note: frontend/dist is intentionally committed so the backend can serve the
+# UI without requiring Node/npm. Rebuild with `npm run build` in frontend/.
 
 # Editor / OS
 .DS_Store
