@@ -12,9 +12,30 @@ from .db import SessionLocal
 from .mock_data import generate_usage_records
 from .models import BillingCycleUsage, PollRun, ServiceLine
 from .overage import UsageRecord, compute_overage
+from .spotai_client import build_customer_map
 from .starlink_client import StarlinkClient
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_customers(settings: Settings, records: list[UsageRecord]) -> dict[str, str]:
+    """Map service_line_number -> customer.
+
+    Mock data carries its own customer; live data resolves nicknames against the
+    Spot.ai location->customer map.
+    """
+    spot_map = (
+        build_customer_map(settings)
+        if settings.spot_ai_enabled and not settings.effective_mock_mode
+        else {}
+    )
+    out: dict[str, str] = {}
+    for rec in records:
+        if rec.customer:
+            out[rec.service_line_number] = rec.customer
+        elif rec.nickname and rec.nickname.lower() in spot_map:
+            out[rec.service_line_number] = spot_map[rec.nickname.lower()]
+    return out
 
 
 def cycle_key(rec: UsageRecord) -> str:
@@ -42,6 +63,7 @@ def run_poll(settings: Settings | None = None) -> PollRun:
     try:
         records = _collect_records(settings)
         seen = {rec.service_line_number for rec in records}
+        customers = _resolve_customers(settings, records)
         handled_lines: set[str] = set()
         for rec in records:
             result = compute_overage(rec, settings)
@@ -49,12 +71,14 @@ def run_poll(settings: Settings | None = None) -> PollRun:
             # Upsert the ServiceLine once per line (records repeat per cycle).
             if rec.service_line_number not in handled_lines:
                 handled_lines.add(rec.service_line_number)
+                customer = customers.get(rec.service_line_number)
                 existing = session.get(ServiceLine, rec.service_line_number)
                 if existing is None:
                     session.add(
                         ServiceLine(
                             service_line_number=rec.service_line_number,
                             nickname=rec.nickname,
+                            customer=customer,
                             account_number=rec.account_number,
                             service_plan=rec.service_plan,
                             active=True,
@@ -62,6 +86,7 @@ def run_poll(settings: Settings | None = None) -> PollRun:
                     )
                 else:
                     existing.nickname = rec.nickname
+                    existing.customer = customer
                     existing.service_plan = rec.service_plan
                     existing.account_number = rec.account_number
 

@@ -33,6 +33,17 @@ class Settings(BaseSettings):
     # API version segment used in request paths (v1 deprecated 2026-05-01).
     starlink_api_version: str = "v2"
 
+    # --- Spot.ai customer mapping ------------------------------------------
+    # Maps Starlink nicknames (unit numbers) to customers via Spot.ai locations.
+    # The Spot.ai API is organization-scoped, so each API key = one customer
+    # (organization). Configure one key per customer:
+    #   SPOT_AI_ACCOUNTS='[{"customer":"Acme Corp","api_key":"sk_..."}, ...]'
+    # Or a single key + customer label for a one-org setup.
+    spot_ai_api_base: str = "https://dev-api.spot.ai/v1"
+    spot_ai_api_key: str = ""
+    spot_ai_customer: str = ""
+    spot_ai_accounts: str = ""  # JSON list of {"customer", "api_key"}
+
     # --- Polling -----------------------------------------------------------
     poll_interval_seconds: int = 3600  # how often to refresh usage (default 1h)
     poll_page_size: int = 100  # service lines per API page / batch
@@ -65,6 +76,33 @@ class Settings(BaseSettings):
     @property
     def effective_mock_mode(self) -> bool:
         return self.mock_mode or not self.has_credentials
+
+    @property
+    def spot_ai_account_list(self) -> list[dict[str, str]]:
+        """Normalized list of {"customer", "api_key"} Spot.ai accounts."""
+        import json
+
+        accounts: list[dict[str, str]] = []
+        if self.spot_ai_accounts.strip():
+            try:
+                parsed = json.loads(self.spot_ai_accounts)
+                if isinstance(parsed, list):
+                    accounts.extend(
+                        {"customer": a.get("customer", ""), "api_key": a.get("api_key", "")}
+                        for a in parsed
+                        if a.get("api_key")
+                    )
+            except (ValueError, AttributeError):
+                pass
+        if self.spot_ai_api_key:
+            accounts.append(
+                {"customer": self.spot_ai_customer, "api_key": self.spot_ai_api_key}
+            )
+        return accounts
+
+    @property
+    def spot_ai_enabled(self) -> bool:
+        return bool(self.spot_ai_account_list)
 
 
 @lru_cache

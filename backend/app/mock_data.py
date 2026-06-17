@@ -41,10 +41,13 @@ def generate_usage_records(
     rng = random.Random(seed)
     windows = _cycle_windows(months)
 
+    customers = [f"Customer {chr(65 + n)}" for n in range(8)]  # Customer A..H
+
     records: list[UsageRecord] = []
     for i in range(count):
         plan_name, included = rng.choice(_PLANS)
         site = rng.choice(_SITES)
+        customer = rng.choice(customers)
         for cycle_start, cycle_end in windows:
             # Spread usage so a realistic minority land in warning/over territory.
             usage_factor = rng.choices(
@@ -61,6 +64,7 @@ def generate_usage_records(
                 UsageRecord(
                     service_line_number=f"SL-{1000 + i}",
                     nickname=f"{site}-{i:03d}",
+                    customer=customer,
                     account_number="ACC-MOCK-0001",
                     service_plan=plan_name,
                     cycle_start=cycle_start,

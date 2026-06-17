@@ -21,6 +21,7 @@ class UsageRecord:
 
     service_line_number: str
     nickname: str | None = None
+    customer: str | None = None
     account_number: str | None = None
     service_plan: str | None = None
     cycle_start: datetime | None = None
