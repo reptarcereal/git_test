@@ -12,7 +12,7 @@ from .db import SessionLocal
 from .mock_data import generate_usage_records
 from .models import BillingCycleUsage, PollRun, ServiceLine
 from .overage import UsageRecord, compute_overage
-from .spotai_client import build_customer_map
+from .spotai_client import build_customer_map, extract_unit_numbers
 from .starlink_client import StarlinkClient
 
 logger = logging.getLogger(__name__)
@@ -21,8 +21,8 @@ logger = logging.getLogger(__name__)
 def _resolve_customers(settings: Settings, records: list[UsageRecord]) -> dict[str, str]:
     """Map service_line_number -> customer.
 
-    Mock data carries its own customer; live data resolves nicknames against the
-    Spot.ai location->customer map.
+    Mock data carries its own customer; live data matches the unit number in
+    each nickname against the Spot.ai unit->customer map.
     """
     spot_map = (
         build_customer_map(settings)
@@ -33,8 +33,11 @@ def _resolve_customers(settings: Settings, records: list[UsageRecord]) -> dict[s
     for rec in records:
         if rec.customer:
             out[rec.service_line_number] = rec.customer
-        elif rec.nickname and rec.nickname.lower() in spot_map:
-            out[rec.service_line_number] = spot_map[rec.nickname.lower()]
+            continue
+        for number in extract_unit_numbers(rec.nickname):
+            if number in spot_map:
+                out[rec.service_line_number] = spot_map[number]
+                break
     return out
 
 

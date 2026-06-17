@@ -10,6 +10,7 @@ then attached to every matching service line.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -17,6 +18,26 @@ import httpx
 from .config import Settings
 
 logger = logging.getLogger(__name__)
+
+
+def extract_unit_numbers(text: str | None) -> list[str]:
+    """Pull normalized unit numbers from a nickname or location name.
+
+    Starlink nicknames and Spot.ai location names share a unit number but use
+    different formats ("UNIT 002", "Unit 2", "Site 2 - Phoenix"), so we match
+    on the number alone. Leading zeros are stripped ("002" == "2") and the
+    longest digit run is tried first (so a real unit number beats an embedded
+    zip code). Returns [] when there is no number (e.g. "Starlink Mini Test").
+    """
+    runs = re.findall(r"\d+", text or "")
+    out: list[str] = []
+    seen: set[str] = set()
+    for run in sorted(runs, key=len, reverse=True):
+        normalized = run.lstrip("0") or "0"
+        if normalized not in seen:
+            seen.add(normalized)
+            out.append(normalized)
+    return out
 
 
 class SpotAiClient:
@@ -63,9 +84,10 @@ class SpotAiClient:
 
 
 def build_customer_map(settings: Settings) -> dict[str, str]:
-    """Return {location_name_lower: customer} across all Spot.ai accounts.
+    """Return {unit_number: customer} across all Spot.ai accounts.
 
-    Failures for one account are logged and skipped so the poll still succeeds.
+    Each location name is reduced to its unit number(s); failures for one
+    account are logged and skipped so the poll still succeeds.
     """
     mapping: dict[str, str] = {}
     for account in settings.spot_ai_account_list:
@@ -77,19 +99,23 @@ def build_customer_map(settings: Settings) -> dict[str, str]:
         except (httpx.HTTPError, ValueError) as exc:
             logger.warning("Spot.ai location fetch failed for an account: %s", exc)
             continue
+        # Prefer an org/customer field on the location if present, else the
+        # account's configured customer label.
         for loc in locations:
-            name = (loc.get("name") or "").strip()
-            if not name:
-                continue
-            # Prefer an org/customer field on the location if present; otherwise
-            # use the account's configured customer label.
             customer = (
                 loc.get("organization")
                 or loc.get("organizationName")
                 or loc.get("customer")
                 or customer_label
             )
-            if customer:
-                mapping[name.lower()] = customer
-    logger.info("Spot.ai: mapped %d locations to customers.", len(mapping))
+            if not customer:
+                continue
+            for number in extract_unit_numbers(loc.get("name")):
+                if number in mapping and mapping[number] != customer:
+                    logger.warning(
+                        "Spot.ai: unit %s maps to multiple customers (%s, %s)",
+                        number, mapping[number], customer,
+                    )
+                mapping.setdefault(number, customer)
+    logger.info("Spot.ai: mapped %d unit numbers to customers.", len(mapping))
     return mapping
